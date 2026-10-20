@@ -84,17 +84,19 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
     }
   };
 
-  const sendTest = () => {
-    try {
-      new Notification(t('testTitle'), {
-        body: t('testBody'),
-        icon: '/icon',
-        tag: 'wacrm-test-notification',
-      });
-    } catch {
-      toast.error(t('unsupported'));
-    }
-  };
+ const sendTest = () => {
+  try {
+    new Notification(t('testTitle'), {
+      body: t('testBody'),
+      icon: '/icon',
+      tag: 'wacrm-test-notification',
+      renotify: true,
+    });
+  } catch (error) {
+    console.error('[WACRM] Error al mostrar notificación:', error);
+    toast.error(t('unsupported'));
+  }
+};
 
   const statusKey =
     permission === 'granted'
