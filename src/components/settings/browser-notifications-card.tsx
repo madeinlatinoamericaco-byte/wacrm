@@ -85,31 +85,22 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
   };
 
 
+
 const sendTest = () => {
   try {
-    const options = {
+    const notification = new Notification(t('testTitle'), {
       body: t('testBody'),
       icon: '/icon',
-      tag: 'wacrm-test-notification',
+      tag: `wacrm-test-${Date.now()}`,
       renotify: true,
-    } satisfies NotificationOptions & { renotify: boolean };
-
-    const notification = new Notification(
-      t('testTitle'),
-      options
-    );
+    });
 
     notification.onerror = (error) => {
-      console.error(
-        '[WACRM] Error de notificación:',
-        error
-      );
+      console.error('[WACRM] Error de notificación:', error);
+      toast.error(t('unsupported'));
     };
   } catch (error) {
-    console.error(
-      '[WACRM] No se pudo crear la notificación:',
-      error
-    );
+    console.error('[WACRM] No se pudo crear la notificación:', error);
     toast.error(t('unsupported'));
   }
 };
