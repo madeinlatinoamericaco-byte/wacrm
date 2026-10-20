@@ -105,7 +105,7 @@ function playNotificationSound(): void {
       );
 
       gain.gain.exponentialRampToValueAtTime(
-        0.12,
+        0.50,
         startTime + 0.015,
       );
 
