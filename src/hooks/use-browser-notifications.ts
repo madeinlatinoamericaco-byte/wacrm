@@ -25,6 +25,123 @@ const serverSnapshot = () => false;
 const MAX_SEEN_MESSAGES = 500;
 const CONTACT_LOOKUP_TIMEOUT_MS = 2500;
 
+/**
+ * Contexto de audio compartido por la pestaña.
+ * Se desbloquea con la primera interacción del usuario.
+ */
+let notificationAudioContext: AudioContext | null = null;
+
+function getAudioContext(): AudioContext | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    if (!notificationAudioContext ||
+        notificationAudioContext.state === "closed") {
+      notificationAudioContext = new window.AudioContext();
+    }
+
+    return notificationAudioContext;
+  } catch (error) {
+    console.warn(
+      "[WACRM] No se pudo inicializar el audio:",
+      error,
+    );
+    return null;
+  }
+}
+
+/**
+ * Activa el audio después de una interacción del usuario.
+ * Chrome puede bloquear audio automático antes de esta acción.
+ */
+function unlockNotificationAudio(): void {
+  const context = getAudioContext();
+
+  if (!context) return;
+
+  if (context.state === "suspended") {
+    void context.resume().catch((error) => {
+      console.warn(
+        "[WACRM] No se pudo activar el audio:",
+        error,
+      );
+    });
+  }
+}
+
+/**
+ * Sonido breve de dos tonos para mensajes nuevos.
+ */
+function playNotificationSound(): void {
+  const context = getAudioContext();
+
+  if (!context) return;
+
+  if (context.state !== "running") {
+    console.warn(
+      "[WACRM] Audio suspendido. Haz clic en WACRM para activarlo.",
+    );
+    return;
+  }
+
+  try {
+    const playTone = (
+      frequency: number,
+      startTime: number,
+      duration: number,
+    ) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(
+        frequency,
+        startTime,
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        startTime,
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.12,
+        startTime + 0.015,
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        startTime + duration,
+      );
+
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+
+      oscillator.start(startTime);
+      oscillator.stop(startTime + duration);
+
+      oscillator.onended = () => {
+        oscillator.disconnect();
+        gain.disconnect();
+      };
+    };
+
+    const now = context.currentTime;
+
+    playTone(784, now, 0.12);
+    playTone(1046.5, now + 0.14, 0.18);
+
+    console.log(
+      "[WACRM] Sonido de notificación reproducido",
+    );
+  } catch (error) {
+    console.warn(
+      "[WACRM] Error al reproducir sonido:",
+      error,
+    );
+  }
+}
+
 export function useBrowserNotifyPref(): boolean {
   return useSyncExternalStore(
     subscribeBrowserNotifyPref,
@@ -36,13 +153,17 @@ export function useBrowserNotifyPref(): boolean {
 export function useBrowserNotifications(): void {
   const enabled = useBrowserNotifyPref();
   const router = useRouter();
-  const t = useTranslations("Settings.browserNotifications.labels");
+  const t = useTranslations(
+    "Settings.browserNotifications.labels",
+  );
 
   const labelsRef = useRef<NotificationLabels>(
     DEFAULT_NOTIFICATION_LABELS,
   );
 
-  const seenRef = useRef<Map<string, number>>(new Map());
+  const seenRef = useRef<Map<string, number>>(
+    new Map(),
+  );
 
   useEffect(() => {
     labelsRef.current = {
@@ -56,9 +177,30 @@ export function useBrowserNotifications(): void {
     };
   }, [t]);
 
+  /**
+   * Prepara el audio después de una interacción.
+   */
+  useEffect(() => {
+    if (!enabled) return;
+
+    const unlock = () => {
+      unlockNotificationAudio();
+    };
+
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [enabled]);
+
   useEffect(() => {
     if (!enabled) {
-      console.log("[WACRM] Notificaciones desactivadas");
+      console.log(
+        "[WACRM] Notificaciones desactivadas",
+      );
       return;
     }
 
@@ -77,8 +219,7 @@ export function useBrowserNotifications(): void {
     );
 
     /**
-     * Muestra una notificación inmediatamente.
-     * No depende de consultas adicionales.
+     * Muestra la notificación y reproduce el sonido.
      */
     const showNotification = (
       msg: Message,
@@ -114,6 +255,9 @@ export function useBrowserNotifications(): void {
           notification.close();
         };
 
+        // Reproducir sonido al crear la notificación.
+        playNotificationSound();
+
         console.log(
           "[WACRM] Notificación creada:",
           msg.id,
@@ -128,7 +272,6 @@ export function useBrowserNotifications(): void {
 
     /**
      * Consulta opcional del nombre del contacto.
-     * Si falla, se utiliza un título genérico.
      */
     const getContactName = async (
       conversationId: string,
@@ -216,10 +359,6 @@ export function useBrowserNotifications(): void {
         return;
       }
 
-      /**
-       * El nombre es opcional. La consulta tiene
-       * un tiempo máximo para evitar bloqueos.
-       */
       const contactName = await getContactName(
         msg.conversation_id,
       );
