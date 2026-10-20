@@ -84,15 +84,12 @@ export function BrowserNotificationsCard({ className }: { className?: string }) 
     }
   };
 
-
-
 const sendTest = () => {
   try {
     const notification = new Notification(t('testTitle'), {
       body: t('testBody'),
       icon: '/icon',
       tag: `wacrm-test-${Date.now()}`,
-      renotify: true,
     });
 
     notification.onerror = (error) => {
